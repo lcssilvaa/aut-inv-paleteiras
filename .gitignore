@@ -1,0 +1,29 @@
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Variáveis de ambiente
+.env
+
+# Credenciais Google
+credentials.json
+token.json
+
+# Arquivos gerados
+saida/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+
+# Arquivos temporários
+*.tmp
+*.temp
+
+# Excel temporário
+~$*.xlsx
+
+# IDE
+.vscode/
+.idea/
