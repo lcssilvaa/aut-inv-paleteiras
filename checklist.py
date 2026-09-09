@@ -205,6 +205,22 @@ def normalizar_tipo(valor):
     return normalizar_texto(valor)
 
 
+def interpretar_ativo(valor):
+
+    valor_normalizado = normalizar_texto(valor)
+
+    if valor_normalizado in {"", "SIM", "S", "TRUE", "VERDADEIRO", "1", "1.0"}:
+        return True
+
+    if valor_normalizado in {"NAO", "N", "FALSE", "FALSO", "0", "0.0"}:
+        return False
+
+    raise ValueError(
+        f"Valor inválido na coluna Ativo: {valor!r}. "
+        "Use Sim ou Não; vazio mantém o equipamento ativo."
+    )
+
+
 def formatar_data(valor):
 
     if pd.isna(valor):
@@ -264,9 +280,14 @@ def carregar_equipamentos():
 
         raise ValueError("Colunas não encontradas na Base Checklist: " f"{faltantes}")
 
+    if "Ativo" in df.columns:
+        colunas.append("Ativo")
+
     df = df[colunas].copy()
 
     df = df.dropna(subset=["Placa"])
+
+    df["ATIVO"] = df["Ativo"].apply(interpretar_ativo) if "Ativo" in df else True
 
     df["PLACA_NORMALIZADA"] = df["Placa"].apply(normalizar_placa)
 
@@ -277,11 +298,17 @@ def carregar_equipamentos():
     df["TIPO_ESPERADO_NORMALIZADO"] = df["Tipo de Equipamento"].apply(normalizar_tipo)
 
     equipamentos = []
+    desabilitados = 0
 
     for placa, grupo in df.groupby(
         "PLACA_NORMALIZADA",
         sort=False,
     ):
+
+        # A desativação vale para a placa inteira, incluindo todos os seus tipos.
+        if not grupo["ATIVO"].all():
+            desabilitados += 1
+            continue
 
         placas = [
             limpar_texto(valor) for valor in grupo["Placa"] if limpar_texto(valor)
@@ -347,13 +374,25 @@ def carregar_equipamentos():
             }
         )
 
-    equipamentos = pd.DataFrame(equipamentos)
+    equipamentos = pd.DataFrame(
+        equipamentos,
+        columns=[
+            "PLACA_NORMALIZADA",
+            "Placa",
+            "Código Filial",
+            "CODIGO_FILIAL_NORMALIZADO",
+            "FILIAL",
+            "TIPOS_ACEITOS",
+            "TIPOS_ACEITOS_NORMALIZADOS",
+        ],
+    )
 
     equipamentos["TIPOS_ACEITOS_TEXTO"] = equipamentos["TIPOS_ACEITOS"].apply(
         lambda tipos: " / ".join(tipos)
     )
 
     print(f"    Equipamentos ativos: {len(equipamentos)}")
+    print(f"    Equipamentos desabilitados: {desabilitados}")
 
     print("    Registros de placa/tipo na base: " f"{len(df)}")
 
@@ -598,9 +637,10 @@ def processar(
 
         return tipo_realizado not in tipos_aceitos
 
-    resultado["INCONSISTENCIA_TIPO"] = resultado.apply(
-        verificar_inconsistencia_tipo,
-        axis=1,
+    resultado["INCONSISTENCIA_TIPO"] = pd.Series(
+        [verificar_inconsistencia_tipo(row) for _, row in resultado.iterrows()],
+        index=resultado.index,
+        dtype=bool,
     )
 
     resultado["INCONSISTENCIA_FILIAL"] = False
@@ -645,9 +685,10 @@ def processar(
 
         return " ; ".join(erros)
 
-    resultado["DESCRICAO_INCONSISTENCIA"] = resultado.apply(
-        descricao_inconsistencia,
-        axis=1,
+    resultado["DESCRICAO_INCONSISTENCIA"] = pd.Series(
+        [descricao_inconsistencia(row) for _, row in resultado.iterrows()],
+        index=resultado.index,
+        dtype="str",
     )
 
     resultado["TEM_INCONSISTENCIA"] = (
