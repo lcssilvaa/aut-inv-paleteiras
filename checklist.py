@@ -1222,7 +1222,7 @@ def main():
             resumo,
         )
 
-        # enviar_emails(resultado)
+        enviar_emails(resultado)
 
         print("\nProcessamento concluído.")
 
