@@ -1,11 +1,16 @@
 import contextlib
 import io
 from pathlib import Path
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
 import pandas as pd
+
+# Permite executar este arquivo diretamente, inclusive de dentro de tests.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import checklist
 

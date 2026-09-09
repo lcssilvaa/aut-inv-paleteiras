@@ -221,6 +221,22 @@ def interpretar_ativo(valor):
     )
 
 
+def obter_siglas_filiais(equipamentos):
+
+    siglas = {}
+
+    for codigo, filial in zip(
+        equipamentos["CODIGO_FILIAL_NORMALIZADO"], equipamentos["FILIAL"]
+    ):
+        if codigo and filial and filial != "BACKUP":
+            siglas.setdefault(codigo, set()).add(filial)
+
+    mapa = {codigo: " / ".join(sorted(nomes)) for codigo, nomes in siglas.items()}
+    # BACKUP usa a filial operacional BHZ, mas mantém seu grupo de envio.
+    mapa["1"] = "BHZ"
+    return mapa
+
+
 def formatar_data(valor):
 
     if pd.isna(valor):
@@ -294,6 +310,9 @@ def carregar_equipamentos():
     df["CODIGO_FILIAL_NORMALIZADO"] = df["Código Filial"].apply(normalizar_codigo)
 
     df["FILIAL"] = df["Filial"].apply(limpar_texto).str.upper()
+
+    # Filiais de equipamentos desabilitados também ajudam a identificar respostas.
+    siglas_filiais = obter_siglas_filiais(df)
 
     df["TIPO_ESPERADO_NORMALIZADO"] = df["Tipo de Equipamento"].apply(normalizar_tipo)
 
@@ -390,6 +409,8 @@ def carregar_equipamentos():
     equipamentos["TIPOS_ACEITOS_TEXTO"] = equipamentos["TIPOS_ACEITOS"].apply(
         lambda tipos: " / ".join(tipos)
     )
+
+    equipamentos.attrs["SIGLAS_FILIAIS"] = siglas_filiais
 
     print(f"    Equipamentos ativos: {len(equipamentos)}")
     print(f"    Equipamentos desabilitados: {desabilitados}")
@@ -578,6 +599,22 @@ def processar(
         how="left",
     )
 
+    siglas_filiais = equipamentos.attrs.get("SIGLAS_FILIAIS")
+    if siglas_filiais is None:
+        siglas_filiais = obter_siglas_filiais(equipamentos)
+
+    resultado["FILIAL_ESPERADA"] = resultado["FILIAL"].mask(
+        resultado["FILIAL"].eq("BACKUP")
+        & resultado["CODIGO_FILIAL_NORMALIZADO"].eq("1"),
+        "BHZ",
+    )
+    resultado["FILIAL_RESPOSTA"] = (
+        resultado["CODIGO_FILIAL_RESPOSTA_NORMALIZADO"]
+        .map(siglas_filiais)
+        .fillna("Não identificada na base")
+    )
+    resultado.loc[resultado["ULTIMA_RESPOSTA"].isna(), "FILIAL_RESPOSTA"] = "-"
+
     agora = pd.Timestamp.now()
 
     resultado["DATA_ANALISE"] = agora
@@ -677,10 +714,10 @@ def processar(
         if row["INCONSISTENCIA_FILIAL"]:
 
             erros.append(
-                "Código da filial esperado: "
-                f"{row['Código Filial']} | "
-                "Código informado: "
-                f"{row['CODIGOFILIALRESPOSTA']}"
+                "Filial esperada: "
+                f"{row['FILIAL_ESPERADA']} | "
+                "Filial informada: "
+                f"{row['FILIAL_RESPOSTA']}"
             )
 
         return " ; ".join(erros)
@@ -769,6 +806,8 @@ def salvar_resultados(
         "TIPOS_ACEITOS_TEXTO",
         "CHECKLIST_REALIZADO",
         "CODIGOFILIALRESPOSTA",
+        "FILIAL_ESPERADA",
+        "FILIAL_RESPOSTA",
         "ULTIMO_RESPONSAVEL",
         "ULTIMA_RESPOSTA",
         "VENCIMENTO",
@@ -854,6 +893,10 @@ def gerar_html_email(
                     </td>
 
                     <td style="border:1px solid #ddd;padding:8px;">
+                        {formatar_valor(row["ULTIMO_RESPONSAVEL"])}
+                    </td>
+
+                    <td style="border:1px solid #ddd;padding:8px;">
                         {formatar_data(row["VENCIMENTO"])}
                     </td>
 
@@ -892,6 +935,9 @@ def gerar_html_email(
                             Última realização
                         </th>
                         <th style="border:1px solid #ddd;padding:8px;">
+                            Realizado por
+                        </th>
+                        <th style="border:1px solid #ddd;padding:8px;">
                             Vencimento
                         </th>
                         <th style="border:1px solid #ddd;padding:8px;">
@@ -927,15 +973,19 @@ def gerar_html_email(
                     </td>
 
                     <td style="border:1px solid #ddd;padding:8px;">
-                        {formatar_valor(row["Código Filial"])}
+                        {formatar_valor(row["FILIAL_ESPERADA"])}
                     </td>
 
                     <td style="border:1px solid #ddd;padding:8px;">
-                        {formatar_valor(row["CODIGOFILIALRESPOSTA"])}
+                        {formatar_valor(row["FILIAL_RESPOSTA"])}
                     </td>
 
                     <td style="border:1px solid #ddd;padding:8px;">
                         {formatar_data(row["ULTIMA_RESPOSTA"])}
+                    </td>
+
+                    <td style="border:1px solid #ddd;padding:8px;">
+                        {formatar_valor(row["ULTIMO_RESPONSAVEL"])}
                     </td>
 
                     <td style="border:1px solid #ddd;padding:8px;">
@@ -972,13 +1022,16 @@ def gerar_html_email(
                             Checklist realizado
                         </th>
                         <th style="border:1px solid #ddd;padding:8px;">
-                            Cód. filial esperado
+                            Filial esperada
                         </th>
                         <th style="border:1px solid #ddd;padding:8px;">
-                            Cód. filial informado
+                            Filial informada
                         </th>
                         <th style="border:1px solid #ddd;padding:8px;">
                             Data
+                        </th>
+                        <th style="border:1px solid #ddd;padding:8px;">
+                            Realizado por
                         </th>
                         <th style="border:1px solid #ddd;padding:8px;">
                             Problema
