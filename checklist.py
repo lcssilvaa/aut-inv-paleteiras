@@ -72,7 +72,9 @@ def carregar_destinatarios():
 
     filiais = [
         "AJU",
+        "BACKUP",
         "BAU",
+        "BHZ",
         "BNU",
         "BRA",
         "CAW",
