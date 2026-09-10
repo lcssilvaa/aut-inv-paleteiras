@@ -18,6 +18,9 @@ automacao/
     mensagem_email.py        # Montagem do e-mail e do anexo
     relatorios_pdf.py        # Dados, gráficos e diagramação dos PDFs
 logo/logo.png               # Logo utilizada nos cabeçalhos
+cloud/                      # Páginas públicas usadas na configuração OAuth
+    politica-de-privacidade.html
+    termos-de-servico.html
 tests/                      # Testes com dados fictícios e envio simulado
 .env.example                # Modelo público de configuração
 requirements.txt            # Dependências de execução
