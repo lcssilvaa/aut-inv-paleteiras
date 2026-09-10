@@ -1,13 +1,72 @@
 # Checklists de equipamentos e inventário de paleteiras
 
-Automações Python que cruzam cadastros com históricos de registros, geram relatórios Excel e PDF e enviam cobranças por grupo via Gmail. O e-mail mantém as tabelas de pendências e inclui o resumo visual em PDF.
+Este projeto ajuda a acompanhar os checklists dos equipamentos e o inventário das paleteiras. Ele compara duas planilhas, identifica o que precisa de atenção e prepara os relatórios e os e-mails para os responsáveis de cada filial.
+
+Em vez de conferir cada equipamento manualmente, você atualiza as planilhas e executa o programa. O resultado fica disponível em Excel, para consultar os detalhes, e em PDF, para visualizar os indicadores e compartilhar por e-mail.
 
 | Automação | Identificação do equipamento | O que analisa |
 | --- | --- | --- |
 | `checklist.py` | Placa | Último checklist, prazo, tipo realizado e código da filial |
 | `paleteiras.py` | QR Code | Leitura de inventário, prazo e custo dos equipamentos pendentes |
 
-Cada script funciona de forma independente e precisa apenas das suas duas bases. Ambos usam o mesmo `.env`, a mesma configuração do Gmail e os módulos de relatório em `automacao/`.
+Os dois programas funcionam separadamente: você pode executar só o checklist, só as paleteiras ou ambos. Cada um utiliza suas próprias duas planilhas, mas os dois compartilham as configurações de e-mail.
+
+## Por onde começar
+
+- **Primeira utilização:** siga [Instalação e configuração](#instalação-e-configuração-passo-a-passo). A configuração inicial do Google pode ser feita com apoio da TI.
+- **Computador já configurado:** vá direto a [Como executar no dia a dia](#como-executar-no-dia-a-dia).
+- **Dúvidas sobre o resultado:** consulte [Paleteiras](#inventário-de-paleteiras--paleteiraspy) ou [Checklists](#checklists-de-equipamentos--checklistpy).
+- **Problemas com o envio:** consulte [Gmail API](#gmail-api-como-configurar-o-envio) e [Problemas comuns](#problemas-comuns).
+
+## O que acontece quando o programa roda
+
+1. Confere se as duas planilhas foram encontradas.
+2. Compara o cadastro dos equipamentos com os registros realizados.
+3. Identifica os equipamentos no prazo e os que precisam de atenção.
+4. Calcula os totais de cada filial e gera os arquivos Excel e PDF.
+5. Envia um e-mail para os grupos que têm problemas e destinatários configurados.
+
+```mermaid
+flowchart LR
+    A[Cadastro dos equipamentos] --> C[Comparação das planilhas]
+    B[Registros realizados] --> C
+    C --> D[Relatórios Excel e PDF]
+    C --> E[Pendências por filial]
+    E --> F[Gmail API]
+    F --> G[E-mail aos responsáveis]
+```
+
+O checklist verifica prazo, tipo e filial. O inventário de paleteiras verifica as leituras e o prazo, além de somar o custo cadastrado dos equipamentos pendentes.
+
+## Tecnologias utilizadas
+
+Você não precisa conhecer todas estas ferramentas para executar o projeto. Elas são as peças que fazem a automação funcionar:
+
+| Tecnologia | Para que serve aqui |
+| --- | --- |
+| Python | Executa as instruções do programa |
+| Pandas | Compara e organiza os dados das planilhas |
+| OpenPyXL | Permite ler e gravar arquivos Excel |
+| ReportLab e Pillow | Criam os PDFs com gráficos, tabelas e logo |
+| Gmail API e bibliotecas do Google | Fazem o envio dos e-mails pela conta autorizada |
+| Google OAuth 2.0 | Permite autorizar o programa na tela do Google |
+| python-dotenv | Lê os caminhos, prazos e destinatários do arquivo `.env` |
+| Excel | Formato das bases de entrada e dos relatórios detalhados |
+| OneDrive/SharePoint, quando utilizado | Mantém as planilhas disponíveis em uma pasta sincronizada no computador |
+
+## Antes de começar
+
+Tenha um computador com Python **3.11 ou superior**, os arquivos deste projeto e acesso às planilhas da automação que deseja executar. Para enviar e-mails, também será necessário acesso à internet e a uma conta com Gmail habilitado.
+
+O **PowerShell** é a janela do Windows onde os comandos deste guia serão digitados. Abra a pasta do projeto no Explorador de Arquivos, digite `powershell` na barra de endereço e pressione Enter. Assim, os comandos serão executados na pasta certa.
+
+Confira se o Python está instalado:
+
+```powershell
+python --version
+```
+
+Se o Windows não reconhecer `python`, tente `py --version`. Caso apenas `py` funcione, use `py` no comando de criação do ambiente virtual abaixo. Se nenhum funcionar, instale o Python e abra uma nova janela do PowerShell.
 
 ## Estrutura
 
@@ -29,14 +88,47 @@ requirements-dev.txt        # Dependências adicionais de desenvolvimento
 
 Os arquivos `.env`, `credentials.json`, `token.json`, as bases em `dados/` e os relatórios em `saida/` são locais e ignorados pelo Git. As bases também podem ficar em uma pasta sincronizada externa ao projeto.
 
-## Preparação
+| Arquivo ou pasta | Explicação simples |
+| --- | --- |
+| `checklist.py` e `paleteiras.py` | Os programas que você executa |
+| `.env` | Sua ficha de configuração: localização das planilhas, prazos e destinatários |
+| `.env.example` | Modelo para criar essa ficha; não é usado na execução |
+| `credentials.json` | Identifica este aplicativo na configuração do Google |
+| `token.json` | Guarda a autorização da conta que enviará os e-mails |
+| `saida/` | Pasta onde os relatórios ficam após a execução |
+| `cloud/` | Páginas de política de privacidade e termos de serviço |
 
-Use Python 3.11 ou superior. No PowerShell, na raiz do projeto:
+## Instalação e configuração passo a passo
+
+### 1. Obter o projeto
+
+Se você já está com os arquivos no computador, passe para a etapa 2. Caso contrário, abra o [repositório no GitHub](https://github.com/lcssilvaa/aut-inv-paleteiras), escolha **Code → Download ZIP**, extraia o arquivo e abra a pasta extraída.
+
+Se você já utiliza Git, a alternativa é:
+
+```powershell
+git clone https://github.com/lcssilvaa/aut-inv-paleteiras.git
+cd aut-inv-paleteiras
+```
+
+### 2. Preparar o Python para este projeto
+
+O ambiente virtual é uma pasta que guarda as ferramentas de Python usadas pelo projeto. Crie-o uma vez, no PowerShell aberto na pasta do projeto:
 
 ```powershell
 python -m venv .venv
+```
+
+Depois instale as bibliotecas necessárias:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
+
+Espere os comandos terminarem antes de continuar. Este guia usa o Python diretamente de dentro da pasta `.venv`, portanto não é necessário ativar o ambiente ou mudar as permissões de execução do PowerShell.
+
+### 3. Criar sua configuração local
 
 Na primeira configuração, crie o `.env` sem sobrescrever uma configuração existente:
 
@@ -46,7 +138,17 @@ if (-not (Test-Path -LiteralPath .env)) {
 }
 ```
 
-Abra o `.env` em um editor e preencha:
+Abra o `.env` em um editor, como o Bloco de Notas:
+
+```powershell
+notepad .env
+```
+
+Cada linha segue o formato `NOME_DA_CONFIGURACAO=valor`. Por exemplo, `PRAZO_DIAS=7` define o prazo das paleteiras em sete dias. Altere o que está à direita do sinal `=` e preserve os nomes à esquerda. Não salve como `.env.txt`.
+
+### 4. Informar as planilhas e os prazos
+
+Preencha no `.env`:
 
 - `SHAREPOINT_DIR`: caminho da pasta com as bases Excel. Prefira um caminho absoluto; no Windows, use `/` entre as pastas.
 - `ARQUIVO_BASE_1`, `ARQUIVO_BASE_2` e `ABA_BASE_2`: bases e aba do inventário.
@@ -55,7 +157,7 @@ Abra o `.env` em um editor e preencha:
 - `<FILIAL>_EMAIL_1` até `<FILIAL>_EMAIL_9`: destinatários de cada grupo. Campos vazios não recebem mensagens.
 - `GMAIL_CREDENTIALS_FILE` e `GMAIL_TOKEN_FILE`: caminhos dos arquivos OAuth. Caminhos relativos são resolvidos a partir da raiz do projeto.
 
-Os dois scripts carregam exclusivamente o `.env`; variáveis já definidas no ambiente têm prioridade. O `.env.example` deve permanecer sem configurações pessoais.
+Salve suas alterações no `.env`. O `.env.example` deve permanecer sem configurações pessoais. Em computadores administrados pela TI, configurações já definidas nas variáveis do Windows têm prioridade sobre o arquivo.
 
 Exemplo fictício dos caminhos e prazos no `.env`:
 
@@ -79,9 +181,57 @@ GMAIL_TOKEN_FILE=token.json
 
 `SHAREPOINT_DIR` aponta para arquivos disponíveis no computador; o código não baixa as planilhas do SharePoint. Se a pasta for sincronizada, aguarde a atualização e a disponibilidade local dos arquivos antes de executar.
 
-Para enviar mensagens, disponibilize as credenciais OAuth do Gmail no caminho configurado. Na primeira autenticação, o fluxo solicita acesso à conta e grava o token localmente.
+### 5. Fazer a primeira conferência sem enviar e-mails
 
-## Execução
+Deixe todos os campos que contêm `_EMAIL_` vazios no `.env` e confirme que não há destinatários nas variáveis do Windows. Execute uma das automações conforme a seção [Como executar no dia a dia](#como-executar-no-dia-a-dia).
+
+Abra a pasta `saida/` e confira os resultados. Para esta conferência sem envio, não é preciso autorizar uma conta Gmail. Depois, configure o Gmail e faça um teste com apenas uma filial e seu próprio endereço.
+
+## Gmail API: como configurar o envio
+
+### O que é a Gmail API?
+
+É a conexão que permite ao programa pedir ao Gmail que envie as mensagens preparadas pela automação. O programa monta a tabela e o PDF e faz o envio pela conta que você autorizou.
+
+O projeto solicita a permissão `https://www.googleapis.com/auth/gmail.send`, usada para **enviar e-mails em seu nome**. Essa permissão não concede acesso para ler sua caixa de entrada. [Permissões oficiais da Gmail API](https://developers.google.com/workspace/gmail/api/auth/scopes).
+
+**OAuth 2.0** é o nome do processo em que você entra na sua conta pela tela do Google e autoriza o aplicativo. Você não precisa colocar sua senha do Gmail no código ou no `.env`.
+
+### Configuração inicial no Google
+
+Se a conta e o arquivo `credentials.json` já estão configurados neste computador, vá para a etapa de primeiro envio. Para uma configuração nova, siga estes passos; a TI pode auxiliar com as permissões da organização:
+
+1. Abra o [Google Cloud Console](https://console.cloud.google.com/) e crie ou selecione o projeto do bot.
+2. Em **APIs e serviços → Biblioteca**, procure **Gmail API** e clique em **Ativar**.
+3. Em **Google Auth Platform → Branding**, configure o nome do aplicativo, o contato de suporte e os dados solicitados.
+4. Em **Audience**, escolha o público adequado. **Internal** se aplica ao uso dentro de uma organização Google Workspace; **External** atende contas externas. No modo externo de testes, adicione a conta remetente aos usuários de teste. [Públicos e estados do aplicativo](https://developers.google.com/identity/protocols/oauth2/production-readiness/overview).
+5. Em **Data Access**, configure a permissão `gmail.send` utilizada pelo projeto.
+6. Em **Clients → Create Client**, escolha **Desktop app**, pois o programa roda no computador.
+7. Baixe o JSON da credencial, renomeie-o para `credentials.json` e coloque-o junto de `checklist.py` e `paleteiras.py`.
+
+O roteiro de ativação e criação da credencial está no [guia oficial do Google para Python](https://developers.google.com/workspace/gmail/api/quickstart/python). Os nomes dos menus podem aparecer traduzidos no painel.
+
+### Política, termos e duração da autorização
+
+As páginas em `cloud/` devem ser mantidas. Quando forem usadas no cadastro do aplicativo, publique-as em um endereço web acessível e informe os links correspondentes na configuração do Google. Ter o arquivo HTML na pasta do projeto não publica a página nem conclui a verificação do aplicativo. [Configuração da marca do aplicativo](https://developers.google.com/identity/protocols/oauth2/production-readiness/brand-verification).
+
+**Essas páginas não tornam o token permanente.** Para aplicativos externos em modo **Testing** que solicitam `gmail.send`, a autorização de renovação normalmente vence em sete dias. Sair do modo de testes exige configurar a publicação e atender à verificação aplicável; isso não impede todas as causas de expiração ou revogação. [Regras de expiração do Google](https://developers.google.com/identity/protocols/oauth2#expiration).
+
+Por isso, para o uso contínuo do bot, peça ao responsável pelo projeto Google que confira o público, o estado de publicação e as exigências de verificação. Se a autorização for revogada ou não puder ser renovada, será necessário autorizar a conta novamente.
+
+### Primeiro envio e criação do token
+
+1. No `.env`, deixe somente uma filial preenchida com seu próprio endereço, mantendo os outros destinatários vazios.
+2. Escolha uma filial que tenha pendências e execute o programa desejado.
+3. Quando o navegador abrir, entre na conta que será a **remetente** e revise a autorização solicitada.
+4. Após autorizar, volte ao PowerShell e aguarde a conclusão. O programa grava `token.json` e prossegue com o envio.
+5. Confira a mensagem recebida, a tabela e o PDF anexado antes de preencher os destinatários definitivos.
+
+O navegador só abre quando houver uma tentativa de envio que precise de autorização. Sem problemas ou sem destinatários para o grupo, não haverá e-mail nem criação do token. Nos próximos envios, o programa reutiliza a autorização salva e tenta renová-la quando necessário.
+
+`credentials.json` e `token.json` devem ficar apenas no computador autorizado. Eles já estão excluídos do versionamento pelo `.gitignore`.
+
+## Como executar no dia a dia
 
 Execute os comandos no PowerShell, dentro da pasta do projeto. Não é necessário ativar o ambiente virtual ao usar o caminho completo do Python abaixo.
 
@@ -109,13 +259,15 @@ Uma rotina de utilização é:
 
 Os arquivos de saída são sobrescritos a cada execução. O código não possui agendamento nem controle para impedir o reenvio da mesma cobrança: executar novamente pode enviar novos e-mails enquanto houver pendências.
 
+Quando aparecer **Processamento concluído**, consulte os relatórios em `saida/`. Caso haja destinatários configurados e problemas na filial, o envio já terá sido realizado. As seções seguintes explicam quais informações cada automação espera e como interpretar o resultado.
+
 ## Inventário de paleteiras — `paleteiras.py`
 
 ### Bases necessárias
 
 **Base 1 — leituras realizadas**, definida por `ARQUIVO_BASE_1`:
 
-- O script lê a primeira aba e espera o cabeçalho na **linha 7 do Excel** (`header=6`).
+- O programa lê a primeira aba e espera os nomes das colunas na **linha 7 do Excel**.
 - As colunas obrigatórias são:
 
 | Coluna | Conteúdo |
@@ -125,7 +277,7 @@ Os arquivos de saída são sobrescritos a cada execução. O código não possui
 | `NOME` | Pessoa que realizou a leitura |
 | `DATAHORA` | Data e hora da leitura |
 
-Datas do Excel, datas em formato ISO e textos com dia primeiro são tratados pelo leitor. Registros sem QR válido ou sem data válida são descartados.
+O programa aceita datas do Excel e textos como `2026-09-01 10:00` ou `01/09/2026 10:00`. Registros sem QR válido ou sem data válida são descartados.
 
 **Base 2 — cadastro de paleteiras**, definida por `ARQUIVO_BASE_2`:
 
@@ -144,9 +296,9 @@ O cadastro define quais equipamentos serão analisados. Uma leitura sem equipame
 
 ### Cruzamento e classificação
 
-O código normaliza `CODIGO` e `QR Code`: utiliza a parte anterior ao primeiro hífen, remove o sufixo `.0`, mantém os dígitos e completa com zeros à esquerda até ter pelo menos cinco posições. Por exemplo, `123 - descrição` e `00123` correspondem ao QR `00123`.
+Antes de comparar as planilhas, o programa padroniza `CODIGO` e `QR Code` para reconhecer o mesmo equipamento mesmo quando a escrita muda. Por exemplo, `123 - descrição` e `00123` correspondem ao QR `00123`: ele usa a parte anterior ao primeiro hífen, retira um eventual `.0` no final, mantém os dígitos e completa com zeros à esquerda até ter pelo menos cinco posições.
 
-**A Base 1 precisa conter apenas a leitura mais recente de cada QR normalizado, e a Base 2 deve ter um cadastro por QR.** Atualmente, `paleteiras.py` cruza as linhas sem ordenar e eliminar leituras anteriores. Se houver várias leituras do mesmo QR, o equipamento poderá aparecer repetido e aumentar os totais e custos. A consolidação das leituras deve ser feita na base antes da execução.
+**Deixe apenas a leitura mais recente de cada QR na Base 1 e um cadastro por QR na Base 2.** Atualmente, `paleteiras.py` não escolhe sozinho a leitura mais recente quando há várias. Nessa situação, o equipamento poderá aparecer repetido e aumentar os totais e custos. Confira essa preparação da planilha antes de executar.
 
 O vencimento é a data/hora da leitura acrescida de `PRAZO_DIAS`. O status é calculado em relação à data/hora do computador no momento da execução:
 
@@ -180,7 +332,7 @@ O anexo `Resumo_Paleteiras_<FILIAL>.pdf` inclui todos os equipamentos daquela fi
 
 **Cadastro**, definido por `CHECKLIST_ARQUIVO_EQUIPAMENTOS`: primeira aba, cabeçalho na **linha 1**, com `Placa`, `Código Filial`, `Filial` e `Tipo de Equipamento`. A coluna `Ativo` é opcional.
 
-**Histórico**, definido por `CHECKLIST_ARQUIVO_LEITURAS`: primeira aba, cabeçalho na **linha 6 do Excel** (`header=5`), com estas colunas obrigatórias:
+**Histórico**, definido por `CHECKLIST_ARQUIVO_LEITURAS`: primeira aba, nomes das colunas na **linha 6 do Excel**, com estas colunas obrigatórias:
 
 | Coluna | Utilização |
 | --- | --- |
@@ -239,6 +391,8 @@ Na primeira tentativa de envio, o código abre o fluxo de autorização do Gmail
 
 | Situação | O que conferir |
 | --- | --- |
+| Windows não reconhece `python` | Tente `py --version`; se também não funcionar, instale Python e reabra o PowerShell |
+| `No module named pandas` ou outra biblioteca | Execute `.\.venv\Scripts\python.exe -m pip install -r requirements.txt` e use esse mesmo Python para rodar o projeto |
 | Base não encontrada | `SHAREPOINT_DIR`, nome do arquivo e disponibilidade local da planilha |
 | Colunas não encontradas | Grafia dos cabeçalhos e linha esperada: leituras de paleteiras na 7, histórico de checklist na 6, cadastros na 1 |
 | Aba não encontrada | `ABA_BASE_2` deve ser igual ao nome da aba do cadastro de paleteiras |
@@ -247,6 +401,15 @@ Na primeira tentativa de envio, o código abre o fluxo de autorização do Gmail
 | Nenhum e-mail enviado | Existência de problemas para o grupo, sigla aceita pelo script e destinatários preenchidos |
 | Erro ao salvar Excel | Feche o relatório aberto e confira a permissão de escrita em `saida/` |
 | Erro de importação de módulo | Instale as dependências no mesmo Python usado para executar e mantenha a pasta `automacao/` junto dos scripts |
+| `Invalid To header` no Gmail | Use um endereço válido por campo `_EMAIL_`, sem nomes, vírgulas ou caracteres extras |
+| Google bloqueia a autorização | Confira a conta selecionada, os usuários de teste, o público do projeto e as permissões da organização com a TI |
+| Gmail volta a pedir autorização ou mostra `invalid_grant` | Confira a situação do aplicativo e da autorização; siga a orientação abaixo para refazer o acesso |
+
+### Como refazer a autorização do Gmail
+
+Se o token estiver inválido ou for necessário trocar a conta remetente, feche o programa, remova **somente o arquivo de token** indicado em `GMAIL_TOKEN_FILE` e execute novamente com uma filial de teste configurada. O navegador abrirá para uma nova autorização quando o programa tentar enviar o e-mail. Não é necessário remover `credentials.json`.
+
+Se o projeto continuar externo em modo de testes, refazer o login não resolve a duração limitada da autorização. Confira a configuração no Google antes de depender de envios recorrentes.
 
 ## Desenvolvimento e testes
 
