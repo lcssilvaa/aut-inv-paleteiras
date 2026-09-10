@@ -707,7 +707,9 @@ def processar(
     )
     resultado["STATUS_CHECKLIST"] = resultado["STATUS_PRAZO"]
     resultado.loc[resultado["PENDENCIA_BATERIA"], "STATUS_CHECKLIST"] = "PENDENTE"
-    motivo_bateria = "Checklist Bateria obrigatório; o último registro é de outro tipo"
+    motivo_bateria = (
+        "O tipo troca inicial/final não é considerado. Favor realizar o tipo Bateria."
+    )
     resultado.loc[resultado["PENDENCIA_BATERIA"], "MOTIVO_PENDENCIA"] = resultado.loc[
         resultado["PENDENCIA_BATERIA"], "MOTIVO_PENDENCIA"
     ].apply(lambda motivo: f"{motivo}; {motivo_bateria}" if motivo else motivo_bateria)
