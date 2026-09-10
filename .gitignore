@@ -5,21 +5,52 @@ env/
 
 # Variáveis de ambiente
 .env
+.env.*
+!.env.example
 
 # Credenciais Google
 credentials.json
 token.json
+credentials*.json
+client_secret*.json
+token*.json
+secrets/
+credenciais/
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Arquivos gerados
 saida/
+dados/
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+*.parquet
+*.pdf
+*.log
+*.zip
 
 # Cache Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.test-tmp/
+build/
+dist/
+*.egg-info/
 
 # Arquivos temporários
 *.tmp
 *.temp
+*.bak
+*.backup
 
 # Excel temporário
 ~$*.xlsx
@@ -27,3 +58,5 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
