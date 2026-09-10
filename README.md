@@ -1,1178 +1,261 @@
-# Automação de Inventário de Paleteiras
+# Checklists de equipamentos e inventário de paleteiras
 
-Automação desenvolvida em Python para processamento das bases de inventário de paleteiras, identificação de equipamentos pendentes e envio automático de cobranças por e-mail utilizando a **Gmail API**.
+Automações Python que cruzam cadastros com históricos de registros, geram relatórios Excel e PDF e enviam cobranças por grupo via Gmail. O e-mail mantém as tabelas de pendências e inclui o resumo visual em PDF.
 
-A aplicação cruza duas bases Excel:
+| Automação | Identificação do equipamento | O que analisa |
+| --- | --- | --- |
+| `checklist.py` | Placa | Último checklist, prazo, tipo realizado e código da filial |
+| `paleteiras.py` | QR Code | Leitura de inventário, prazo e custo dos equipamentos pendentes |
 
-- Base de leituras/inventários;
-- Base de paleteiras em operação.
+Cada script funciona de forma independente e precisa apenas das suas duas bases. Ambos usam o mesmo `.env`, a mesma configuração do Gmail e os módulos de relatório em `automacao/`.
 
-A partir desse cruzamento, a aplicação identifica quais equipamentos estão dentro ou fora do prazo de inventário e envia automaticamente um e-mail para os responsáveis de cada filial.
-
----
-
-## 📋 Funcionalidades
-
-A aplicação realiza as seguintes etapas:
-
-1. Valida a existência das bases Excel.
-2. Carrega a Base 1.
-3. Carrega a Base 2.
-4. Normaliza os QR Codes.
-5. Cruza as informações das duas bases.
-6. Identifica a última leitura de cada paleteira.
-7. Calcula o prazo de inventário.
-8. Classifica cada equipamento como:
-   - `LIDO`
-   - `PENDENTE`
-   - `NUNCA LIDO`
-9. Calcula o tempo desde a última leitura.
-10. Calcula o valor financeiro das pendências.
-11. Gera um relatório completo em Excel.
-12. Gera um resumo por filial.
-13. Gera o corpo HTML do e-mail.
-14. Envia automaticamente os e-mails através da Gmail API.
-15. Permite múltiplos destinatários por filial.
-16. Permite configurar caminhos, destinatários e parâmetros através de `.env`.
-
----
-
-# 🛠️ Tecnologias utilizadas
-
-- Python
-- Pandas
-- OpenPyXL
-- Gmail API
-- Google OAuth 2.0
-- python-dotenv
-- Microsoft SharePoint/OneDrive sincronizado localmente
-- Excel
-
----
-
-# 📌 Requisitos
-
-## Python
-
-É necessário possuir Python instalado.
-
-A documentação atual do Google para a Gmail API recomenda Python 3.10.7 ou superior para o quickstart.
-
-Recomenda-se utilizar Python 3.10 ou superior.
-
-Verifique a instalação:
-
-```bash
-python --version
-```
-
-ou:
-
-```bash
-py --version
-```
-
-Exemplo:
+## Estrutura
 
 ```text
-Python 3.14.6
+checklist.py                 # Execução da análise de checklists
+paleteiras.py                # Execução do inventário de paleteiras
+automacao/
+    mensagem_email.py        # Montagem do e-mail e do anexo
+    relatorios_pdf.py        # Dados, gráficos e diagramação dos PDFs
+logo/logo.png               # Logo utilizada nos cabeçalhos
+tests/                      # Testes com dados fictícios e envio simulado
+.env.example                # Modelo público de configuração
+requirements.txt            # Dependências de execução
+requirements-dev.txt        # Dependências adicionais de desenvolvimento
 ```
 
----
+Os arquivos `.env`, `credentials.json`, `token.json`, as bases em `dados/` e os relatórios em `saida/` são locais e ignorados pelo Git. As bases também podem ficar em uma pasta sincronizada externa ao projeto.
 
-# 📁 Estrutura do projeto
+## Preparação
 
-A estrutura recomendada do projeto é:
-
-```text
-automacao-paleteiras/
-│
-├── main.py
-│
-├── .env
-├── .env.example
-├── .gitignore
-├── requirements.txt
-│
-├── credentials.json
-├── token.json
-│
-└── saida/
-```
-
-### Arquivos importantes
-
-| Arquivo | Função |
-|---|---|
-| `main.py` | Código principal da aplicação |
-| `.env` | Configurações locais e dados sensíveis |
-| `.env.example` | Modelo do `.env` |
-| `.gitignore` | Impede envio de arquivos sensíveis ao GitHub |
-| `requirements.txt` | Dependências Python |
-| `credentials.json` | Credenciais OAuth do Google |
-| `token.json` | Token de autorização do Gmail |
-| `saida/` | Relatórios gerados pela aplicação |
-
----
-
-# 🚀 Instalação
-
-## 1. Clonar o repositório
-
-Depois que o projeto estiver publicado no GitHub:
-
-```bash
-git clone URL_DO_REPOSITORIO
-```
-
-Entre na pasta:
-
-```bash
-cd automacao-paleteiras
-```
-
----
-
-# 2. Criar ambiente virtual
-
-No Windows:
-
-```bash
-python -m venv .venv
-```
-
-Ative o ambiente:
-
-```bash
-.venv\Scripts\activate
-```
-
-Se estiver utilizando PowerShell:
+Use Python 3.11 ou superior. No PowerShell, na raiz do projeto:
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Quando o ambiente estiver ativo, o terminal deverá apresentar algo semelhante a:
+Na primeira configuração, crie o `.env` sem sobrescrever uma configuração existente:
 
-```text
-(.venv) C:\...\automacao-paleteiras>
+```powershell
+if (-not (Test-Path -LiteralPath .env)) {
+    Copy-Item -LiteralPath .env.example -Destination .env
+}
 ```
 
----
-
-# 3. Atualizar o pip
-
-```bash
-python -m pip install --upgrade pip
-```
-
----
-
-# 4. Instalar as dependências
-
-Se o projeto possuir `requirements.txt`:
-
-```bash
-pip install -r requirements.txt
-```
-
-As principais bibliotecas utilizadas são:
-
-```text
-pandas
-openpyxl
-python-dotenv
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
-```
-
-A instalação das bibliotecas oficiais do cliente Google pode ser feita via pip.
-
----
-
-# 5. Instalação manual das dependências
-
-Caso o `requirements.txt` não esteja disponível, execute:
-
-```bash
-pip install pandas
-pip install openpyxl
-pip install python-dotenv
-pip install google-api-python-client
-pip install google-auth-httplib2
-pip install google-auth-oauthlib
-```
-
-Ou em um único comando:
-
-```bash
-pip install pandas openpyxl python-dotenv google-api-python-client google-auth-httplib2 google-auth-oauthlib
-```
-
-O `python-dotenv` é utilizado para carregar as configurações do arquivo `.env` para as variáveis de ambiente da aplicação.
-
----
-
-# 🔐 Configuração da Gmail API
-
-A aplicação utiliza OAuth 2.0 para autorização da conta Gmail.
-
-## 1. Criar um projeto no Google Cloud
-
-Acesse o Google Cloud Console:
-
-https://console.cloud.google.com/
-
-Crie um novo projeto.
-
-Exemplo de nome:
-
-```text
-Automação Inventário Paleteiras
-```
-
----
-
-# 2. Ativar a Gmail API
-
-Dentro do projeto:
-
-```text
-APIs e serviços
-    ↓
-Biblioteca
-    ↓
-Gmail API
-    ↓
-Ativar
-```
-
-A Gmail API precisa estar habilitada no projeto do Google Cloud antes da aplicação realizar chamadas à API.
-
----
-
-# 3. Configurar OAuth
-
-No Google Cloud:
-
-```text
-Google Auth Platform
-```
-
-Configure:
-
-```text
-Branding
-Audience
-Data Access
-```
-
-Para uma aplicação interna de uma organização Google Workspace, o Google permite configurar o público como `Internal`, quando essa opção estiver disponível para o ambiente da organização.
-
----
-
-# 4. Criar credencial OAuth
-
-Acesse:
-
-```text
-Google Auth Platform
-    ↓
-Clients
-    ↓
-Create Client
-```
-
-Selecione:
-
-```text
-Application type:
-Desktop app
-```
-
-Crie a credencial.
-
-A documentação oficial do Google orienta criar um OAuth Client ID para aplicativo desktop e salvar o JSON baixado como `credentials.json`.
-
----
-
-# 5. Baixar credentials.json
-
-Baixe o arquivo JSON gerado pelo Google.
-
-Renomeie para:
-
-```text
-credentials.json
-```
-
-Coloque na raiz do projeto:
-
-```text
-automacao-paleteiras/
-│
-├── main.py
-├── credentials.json
-├── .env
-└── ...
-```
-
----
-
-# ⚠️ IMPORTANTE — credentials.json NÃO deve ir para o GitHub
-
-O arquivo:
-
-```text
-credentials.json
-```
-
-deve estar no `.gitignore`.
-
-Nunca faça commit desse arquivo em um repositório público.
-
----
-
-# 🔑 Primeiro acesso ao Gmail
-
-Na primeira execução da aplicação, ela verificará se existe:
-
-```text
-token.json
-```
-
-Caso não exista, será aberto o fluxo de autorização do Google.
-
-Será necessário:
-
-1. Fazer login na conta Gmail que enviará os e-mails.
-2. Autorizar o acesso solicitado.
-3. Concluir o processo de autorização.
-
-Depois disso, a aplicação criará:
-
-```text
-token.json
-```
-
-O Google documenta que o token é armazenado localmente após a primeira autorização para evitar novo login em execuções posteriores.
-
----
-
-# ⚠️ IMPORTANTE — token.json também não deve ir para o GitHub
-
-O arquivo:
-
-```text
-token.json
-```
-
-também deve estar no `.gitignore`.
-
-Não compartilhe esse arquivo.
-
----
-
-# ⚙️ Configuração do .env
-
-Crie na raiz do projeto:
-
-```text
-.env
-```
-
-Exemplo:
-
-```env
-# ============================================================
-# GMAIL
-# ============================================================
+Abra o `.env` em um editor e preencha:
+
+- `SHAREPOINT_DIR`: caminho da pasta com as bases Excel. Prefira um caminho absoluto; no Windows, use `/` entre as pastas.
+- `ARQUIVO_BASE_1`, `ARQUIVO_BASE_2` e `ABA_BASE_2`: bases e aba do inventário.
+- `CHECKLIST_ARQUIVO_EQUIPAMENTOS` e `CHECKLIST_ARQUIVO_LEITURAS`: cadastro e histórico de checklists.
+- `PRAZO_DIAS` e `CHECKLIST_PRAZO_DIAS`: prazos das duas automações.
+- `<FILIAL>_EMAIL_1` até `<FILIAL>_EMAIL_9`: destinatários de cada grupo. Campos vazios não recebem mensagens.
+- `GMAIL_CREDENTIALS_FILE` e `GMAIL_TOKEN_FILE`: caminhos dos arquivos OAuth. Caminhos relativos são resolvidos a partir da raiz do projeto.
+
+Os dois scripts carregam exclusivamente o `.env`; variáveis já definidas no ambiente têm prioridade. O `.env.example` deve permanecer sem configurações pessoais.
+
+Exemplo fictício dos caminhos e prazos no `.env`:
+
+```dotenv
+SHAREPOINT_DIR=C:/Dados/Inventario
+
+# Paleteiras: Base 1 = leituras; Base 2 = cadastro dos equipamentos.
+ARQUIVO_BASE_1="Gestão Manutenção de Frotas - Controle de Paleteiras.xlsx"
+ARQUIVO_BASE_2="Planilha de Paleteiras Disktrans.xlsx"
+ABA_BASE_2=Base
+PRAZO_DIAS=7
+
+# Checklists: cadastro e histórico de respostas.
+CHECKLIST_ARQUIVO_EQUIPAMENTOS="Base Checklist.xlsx"
+CHECKLIST_ARQUIVO_LEITURAS="Especifico Cliente - Relatorio BI - Checklist Veicular.xlsx"
+CHECKLIST_PRAZO_DIAS=7
 
 GMAIL_CREDENTIALS_FILE=credentials.json
 GMAIL_TOKEN_FILE=token.json
+```
 
+`SHAREPOINT_DIR` aponta para arquivos disponíveis no computador; o código não baixa as planilhas do SharePoint. Se a pasta for sincronizada, aguarde a atualização e a disponibilidade local dos arquivos antes de executar.
 
-# ============================================================
-# SHAREPOINT / BASES
-# ============================================================
+Para enviar mensagens, disponibilize as credenciais OAuth do Gmail no caminho configurado. Na primeira autenticação, o fluxo solicita acesso à conta e grava o token localmente.
 
-SHAREPOINT_DIR=C:\CAMINHO\DO\SHAREPOINT
+## Execução
 
-ARQUIVO_BASE_1=Gestão Manutenção de Frotas - Controle de Paleteiras.xlsx
-ARQUIVO_BASE_2=Planilha de Paleteiras Disktrans.xlsx
+Execute os comandos no PowerShell, dentro da pasta do projeto. Não é necessário ativar o ambiente virtual ao usar o caminho completo do Python abaixo.
 
-ABA_BASE_2=Base
+Para analisar **somente checklists**:
 
+```powershell
+.\.venv\Scripts\python.exe checklist.py
+```
 
-# ============================================================
-# INVENTÁRIO
-# ============================================================
+Para analisar **somente paleteiras**:
 
-PRAZO_DIAS=7
+```powershell
+.\.venv\Scripts\python.exe paleteiras.py
+```
 
+**Executar os scripts gera os relatórios e envia e-mails aos grupos com problemas e destinatários configurados.** Para executar somente a geração de relatórios, deixe os destinatários vazios no `.env` e verifique se não há destinatários definidos nas variáveis do ambiente.
 
-# ============================================================
-# DESTINATÁRIOS
-# ============================================================
+Uma rotina de utilização é:
 
-CON_EMAIL_1=
+1. Atualizar as duas bases da automação que será executada.
+2. Conferir os nomes dos arquivos, o prazo e os destinatários no `.env`.
+3. Fechar os relatórios Excel anteriores para permitir sua gravação.
+4. Executar o script desejado e aguardar a mensagem de conclusão.
+5. Abrir os arquivos em `saida/` e conferir os totais e as pendências.
+
+Os arquivos de saída são sobrescritos a cada execução. O código não possui agendamento nem controle para impedir o reenvio da mesma cobrança: executar novamente pode enviar novos e-mails enquanto houver pendências.
+
+## Inventário de paleteiras — `paleteiras.py`
+
+### Bases necessárias
+
+**Base 1 — leituras realizadas**, definida por `ARQUIVO_BASE_1`:
+
+- O script lê a primeira aba e espera o cabeçalho na **linha 7 do Excel** (`header=6`).
+- As colunas obrigatórias são:
+
+| Coluna | Conteúdo |
+| --- | --- |
+| `CODIGO` | Código lido, usado para identificar o QR Code |
+| `FILIAL` | Filial informada na leitura; obrigatória na entrada, mas não comparada com a filial do cadastro |
+| `NOME` | Pessoa que realizou a leitura |
+| `DATAHORA` | Data e hora da leitura |
+
+Datas do Excel, datas em formato ISO e textos com dia primeiro são tratados pelo leitor. Registros sem QR válido ou sem data válida são descartados.
+
+**Base 2 — cadastro de paleteiras**, definida por `ARQUIVO_BASE_2`:
+
+- O script lê a aba definida em `ABA_BASE_2` — por padrão, `Base` — com o cabeçalho na **linha 1**.
+- As colunas obrigatórias são:
+
+| Coluna | Conteúdo |
+| --- | --- |
+| `FILIAL` | Filial responsável pelo equipamento e pelo recebimento da cobrança |
+| `QR Code` | Identificação usada no cruzamento com as leituras |
+| `NR_DISK` | Identificação patrimonial exibida no relatório |
+| `MODELO` | Modelo da paleteira |
+| `CUSTO modelo` | Custo cadastrado, usado na soma dos valores pendentes |
+
+O cadastro define quais equipamentos serão analisados. Uma leitura sem equipamento correspondente no cadastro não entra no resultado. Linhas do cadastro sem QR válido são descartadas.
+
+### Cruzamento e classificação
+
+O código normaliza `CODIGO` e `QR Code`: utiliza a parte anterior ao primeiro hífen, remove o sufixo `.0`, mantém os dígitos e completa com zeros à esquerda até ter pelo menos cinco posições. Por exemplo, `123 - descrição` e `00123` correspondem ao QR `00123`.
+
+**A Base 1 precisa conter apenas a leitura mais recente de cada QR normalizado, e a Base 2 deve ter um cadastro por QR.** Atualmente, `paleteiras.py` cruza as linhas sem ordenar e eliminar leituras anteriores. Se houver várias leituras do mesmo QR, o equipamento poderá aparecer repetido e aumentar os totais e custos. A consolidação das leituras deve ser feita na base antes da execução.
+
+O vencimento é a data/hora da leitura acrescida de `PRAZO_DIAS`. O status é calculado em relação à data/hora do computador no momento da execução:
+
+| Status | Condição | Entra na cobrança? |
+| --- | --- | --- |
+| `LIDO` | Há leitura e o vencimento ainda não foi atingido | Não |
+| `PENDENTE` | Há leitura e o vencimento foi atingido | Sim |
+| `NUNCA LIDO` | Não foi encontrada leitura válida na base fornecida | Sim |
+
+Com prazo de 7 dias, uma leitura em 01/09 às 10h vence em 08/09 às 10h. A partir desse horário, passa a `PENDENTE`. `NUNCA LIDO` descreve a ausência de registro no arquivo analisado, não comprova que o equipamento jamais foi inventariado.
+
+O resumo calcula `NAO_LIDOS = PENDENTES + NUNCA_LIDOS` e soma o custo desses dois grupos em `VALOR_PENDENTE`. Custos vazios ou que não podem ser convertidos são tratados como zero. O valor representa o custo cadastrado dos equipamentos pendentes, não uma perda confirmada.
+
+A filial usada para agrupar e cobrar é a `FILIAL` da **Base 2**. Esta automação não verifica divergência entre a filial da leitura e a do cadastro, não valida tipo de checklist e não aplica a coluna `Ativo` do cadastro de checklists.
+
+### Saídas e e-mail das paleteiras
+
+| Arquivo em `saida/` | Conteúdo |
+| --- | --- |
+| `Resultado_Inventario.xlsx` | Equipamentos analisados, QR, patrimônio, modelo, custo, pessoa (`NOME`), leitura (`DATAHORA`), vencimento, status e dias sem leitura |
+| `Resumo_Filiais.xlsx` | Totais por filial, lidos, pendentes, nunca lidos, percentuais e valor pendente |
+| `Resumo_Visual_Paleteiras.pdf` | Gráficos, indicadores, resumo e detalhes dos equipamentos |
+
+O e-mail da filial lista somente `PENDENTE` e `NUNCA LIDO`, com QR, patrimônio, modelo, última leitura, dias sem leitura, custo e status. A pessoa que realizou a leitura consta no Excel e nos detalhes do PDF; não aparece na tabela do corpo desse e-mail.
+
+O anexo `Resumo_Paleteiras_<FILIAL>.pdf` inclui todos os equipamentos daquela filial, inclusive os lidos no prazo, para que os percentuais usem o total correto. Filiais sem pendências ou sem destinatários configurados não recebem mensagens.
+
+## Checklists de equipamentos — `checklist.py`
+
+### Bases necessárias
+
+**Cadastro**, definido por `CHECKLIST_ARQUIVO_EQUIPAMENTOS`: primeira aba, cabeçalho na **linha 1**, com `Placa`, `Código Filial`, `Filial` e `Tipo de Equipamento`. A coluna `Ativo` é opcional.
+
+**Histórico**, definido por `CHECKLIST_ARQUIVO_LEITURAS`: primeira aba, cabeçalho na **linha 6 do Excel** (`header=5`), com estas colunas obrigatórias:
+
+| Coluna | Utilização |
+| --- | --- |
+| `PLACAVEICULO` | Placa para cruzamento com o cadastro |
+| `NOMECHECKLIST` | Tipo de checklist realizado |
+| `CODIGOFILIALRESPOSTA` | Código da filial informado na resposta |
+| `DATARESPOSTA` | Data/hora usada para selecionar o último checklist e calcular o prazo |
+| `ANOMES` | Ano/mês que auxilia na interpretação de datas textuais ambíguas |
+| `RESPONDIDOPOR` | Responsável apresentado nos relatórios e no e-mail |
+| `DATA` | Campo exigido na importação; o prazo usa `DATARESPOSTA` |
+| `RESPOSTALOG` | Campo exigido e carregado do relatório de origem |
+
+O histórico pode conter várias respostas por placa. O código descarta datas inválidas da seleção e mantém o registro de data/hora mais recente por placa, mesmo quando esse registro tem tipo ou filial incorretos.
+
+### Regras de análise
+
+- O cadastro usa `Placa`, `Código Filial`, `Filial` e `Tipo de Equipamento`. A coluna opcional `Ativo` permite excluir equipamentos da análise: `Não` desabilita a placa inteira, inclusive quando há várias linhas dela. Coluna ausente ou valor vazio mantém o equipamento ativo.
+- A análise seleciona o último checklist por placa e verifica prazo, tipo e código de filial. O prazo vence ao completar o número de dias configurado.
+- Para baterias, somente `Bateria` é aceito. Se o último registro for uma troca inicial, troca final ou outro tipo, o equipamento fica pendente mesmo com um registro recente.
+- `STATUS_CHECKLIST` inclui a pendência de bateria; `STATUS_PRAZO` indica exclusivamente a situação do prazo.
+- `MANUTENCAO` é um grupo de cobrança. A filial esperada é exibida como `MANUTENCAO`, e a validação usa o código individual cadastrado para cada equipamento.
+- `BACKUP` e `FROTAS` têm mapeamentos de exibição em `FILIAIS_OPERACIONAIS`, atualmente para CON quando o código cadastrado é 2. Os grupos mantêm seus próprios destinatários.
+
+Exemplo de manutenção: uma placa cadastrada como `MANUTENCAO` com código 7 precisa ter a resposta no código 7. Outra placa do mesmo grupo com código 20 precisa da resposta no código 20. Ambas são cobradas em `MANUTENCAO`.
+
+Um equipamento pode estar no prazo e apresentar divergência de tipo ou filial. Por isso, o total `OK` do resumo de checklists não significa ausência de toda inconsistência. A lista de problemas inclui pendências **ou** divergências; no PDF, o indicador `Em dia` considera o cumprimento de prazo, tipo e filial. Um mesmo equipamento pode aparecer nas duas tabelas do e-mail quando possui pendência e inconsistência.
+
+### Saídas e e-mail dos checklists
+
+| Arquivo em `saida/` | Conteúdo |
+| --- | --- |
+| `Resultado_Checklist.xlsx` | Todos os equipamentos ativos analisados, último registro, responsável, prazo, status e inconsistências |
+| `Problemas_Checklist.xlsx` | Somente equipamentos com pendência ou inconsistência |
+| `Resumo_Checklist.xlsx` | Totais, status e contagens de divergências por grupo |
+| `Resumo_Visual_Checklist.pdf` | Indicadores, gráficos, resumo e detalhes |
+
+O e-mail mantém as tabelas de checklists pendentes e de inconsistências, incluindo o responsável. O anexo `Resumo_Checklist_<FILIAL>.pdf` reúne todos os equipamentos ativos do grupo, inclusive os regulares. Grupos sem problemas ou sem destinatários não recebem mensagens.
+
+## Configuração e teste do envio de e-mail
+
+Os destinatários são definidos por grupo, usando de 1 a 9 campos. Exemplo fictício:
+
+```dotenv
+CON_EMAIL_1=responsavel@example.com
 CON_EMAIL_2=
-
-VIX_EMAIL_1=
-VIX_EMAIL_2=
-
-SSA_EMAIL_1=
-SSA_EMAIL_2=
-
-MOC_EMAIL_1=
-MOC_EMAIL_2=
-
-AJU_EMAIL_1=
-AJU_EMAIL_2=
-
-REC_EMAIL_1=
-REC_EMAIL_2=
-
-FOR_EMAIL_1=
-FOR_EMAIL_2=
+MANUTENCAO_EMAIL_1=manutencao@example.com
 ```
 
----
+As siglas precisam corresponder às aceitas em `carregar_destinatarios()` de cada script. Criar uma nova chave no `.env` não adiciona uma filial à lista do código. Há diferenças entre as listas atuais: por exemplo, checklist usa `MAH` e `SAO`, enquanto paleteiras usa `MHA` e `SÃO`; os grupos `BACKUP`, `FROTAS` e `MANUTENCAO` estão na lista do checklist.
 
-# 📧 Configuração dos destinatários
+Para testar um e-mail, deixe preenchida somente uma filial com seu endereço no `.env` e execute apenas a automação desejada. Esse grupo precisa ter alguma pendência ou inconsistência que gere cobrança. Os demais destinatários devem ficar vazios, inclusive nas variáveis do ambiente. Como a configuração é compartilhada, a mesma chave, como `CON_EMAIL_1`, serve às duas automações.
 
-Cada filial pode possuir até dois destinatários na configuração atual.
+Na primeira tentativa de envio, o código abre o fluxo de autorização do Gmail se não houver token válido. Depois, reutiliza o `token.json` e tenta renová-lo quando necessário. O remetente é a conta autorizada nesse fluxo. Os relatórios são salvos antes do envio; uma falha de autenticação pode ocorrer mesmo depois de os arquivos terem sido gerados.
 
-Exemplo:
+## Problemas comuns
 
-```env
-CON_EMAIL_1=responsavel1@empresa.com.br
-CON_EMAIL_2=responsavel2@empresa.com.br
+| Situação | O que conferir |
+| --- | --- |
+| Base não encontrada | `SHAREPOINT_DIR`, nome do arquivo e disponibilidade local da planilha |
+| Colunas não encontradas | Grafia dos cabeçalhos e linha esperada: leituras de paleteiras na 7, histórico de checklist na 6, cadastros na 1 |
+| Aba não encontrada | `ABA_BASE_2` deve ser igual ao nome da aba do cadastro de paleteiras |
+| Equipamento aparece como nunca lido/realizado | Identificador no cadastro e na base de registros, validade da data e abrangência do arquivo exportado |
+| Paleteira repetida no resultado | QR normalizado duplicado no cadastro ou mais de uma leitura por QR na Base 1 |
+| Nenhum e-mail enviado | Existência de problemas para o grupo, sigla aceita pelo script e destinatários preenchidos |
+| Erro ao salvar Excel | Feche o relatório aberto e confira a permissão de escrita em `saida/` |
+| Erro de importação de módulo | Instale as dependências no mesmo Python usado para executar e mantenha a pasta `automacao/` junto dos scripts |
+
+## Desenvolvimento e testes
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-A aplicação transforma automaticamente isso em:
+Os testes simulam o envio de mensagens; não enviam e-mails reais. Alguns testes criam planilhas e PDFs temporários para verificar os arquivos produzidos.
 
-```python
-"CON": [
-    "responsavel1@empresa.com.br",
-    "responsavel2@empresa.com.br",
-]
-```
+## Arquivos para o GitHub
 
----
+Versione o código, os testes, a logo, a documentação, as dependências e o `.env.example` vazio. O `.gitignore` exclui configurações locais, credenciais e tokens, bases Excel/CSV/Parquet, PDFs, relatórios, logs, caches e ambientes virtuais. Não use `git add -f` para incluir esses arquivos.
 
-# 🏢 Adicionando novas filiais
-
-As filiais utilizadas pela aplicação são configuradas no código na função `carregar_destinatarios()`.
-
-Exemplo:
-
-```python
-filiais = [
-    "CON",
-    "VIX",
-    "SSA",
-    "MOC",
-    "AJU",
-    "REC",
-    "FOR",
-]
-```
-
-Para uma nova filial, adicione o código:
-
-```python
-"NOV",
-```
-
-Depois configure no `.env`:
-
-```env
-NOV_EMAIL_1=responsavel1@patrus.com.br
-NOV_EMAIL_2=responsavel2@patrus.com.br
-```
-
----
-
-# 📂 Configuração das bases
-
-A aplicação utiliza duas planilhas.
-
-## Base 1
-
-Arquivo:
-
-```text
-Gestão Manutenção de Frotas - Controle de Paleteiras.xlsx
-```
-
-Essa base contém os registros de leitura/inventário.
-
-São utilizadas as colunas:
-
-```text
-CODIGO
-FILIAL
-NOME
-DATAHORA
-```
-
----
-
-## Base 2
-
-Arquivo:
-
-```text
-Planilha de Paleteiras Disktrans.xlsx
-```
-
-A aplicação utiliza a aba:
-
-```text
-Base
-```
-
-As colunas necessárias são:
-
-```text
-FILIAL
-QR Code
-NR_DISK
-MODELO
-CUSTO modelo
-```
-
----
-
-# 📍 Caminho do SharePoint
-
-Como as bases estão sincronizadas localmente pelo SharePoint/OneDrive, informe no `.env` o diretório onde os arquivos estão disponíveis.
-
-Exemplo:
-
-```env
-SHAREPOINT_DIR=C:\Users\usuario\Empresa\Automacao\1.6 Alimentação BI
-```
-
-O código adicionará automaticamente os nomes dos arquivos configurados no `.env`.
-
----
-
-# ⏱️ Prazo de inventário
-
-O prazo padrão é:
-
-```env
-PRAZO_DIAS=7
-```
-
-Isso significa que uma paleteira permanece regular por 7 dias após sua última leitura.
-
-Exemplo:
-
-```text
-Última leitura:
-10/08/2026
-
-Prazo:
-7 dias
-
-Vencimento:
-17/08/2026
-```
-
-Após o vencimento, o equipamento passa a ser:
-
-```text
-PENDENTE
-```
-
----
-
-# 🔄 Regras de status
-
-A aplicação utiliza três status.
-
-## LIDO
-
-A paleteira possui uma leitura válida e ainda está dentro do prazo.
-
-```text
-Última leitura + prazo > data atual
-```
-
----
-
-## PENDENTE
-
-A paleteira possui uma leitura, porém o prazo já venceu.
-
-```text
-Última leitura + prazo <= data atual
-```
-
----
-
-## NUNCA LIDO
-
-A paleteira existe na Base 2, mas não possui uma leitura correspondente na Base 1.
-
----
-
-# 📊 Processamento
-
-Ao executar:
-
-```bash
-python main.py
-```
-
-a aplicação realiza:
-
-```text
-Validar bases
-      ↓
-Carregar Base 1
-      ↓
-Carregar Base 2
-      ↓
-Normalizar QR Codes
-      ↓
-Cruzar as bases
-      ↓
-Calcular vencimentos
-      ↓
-Determinar status
-      ↓
-Gerar resumo
-      ↓
-Salvar Excel
-      ↓
-Identificar pendências
-      ↓
-Gerar HTML
-      ↓
-Enviar e-mails
-```
-
----
-
-# 📧 Envio de e-mails
-
-A aplicação envia somente para filiais configuradas no `.env`.
-
-Para cada filial:
-
-1. Verifica as pendências.
-2. Se não houver pendências, não envia e-mail.
-3. Se houver pendências, gera o HTML.
-4. Cria o assunto.
-5. Envia para os destinatários configurados.
-
-Exemplo de assunto:
-
-```text
-[PENDÊNCIAS] Inventário de Paleteiras - CON
-```
-
----
-
-# 🚫 Filial sem pendências
-
-Se uma filial não possuir equipamentos:
-
-```text
-PENDENTE
-```
-
-ou:
-
-```text
-NUNCA LIDO
-```
-
-o sistema não envia e-mail para aquela filial.
-
-Será exibido no terminal:
-
-```text
-Nenhuma pendência encontrada para CON. E-mail não será enviado.
-```
-
----
-
-# 📁 Arquivos gerados
-
-Após a execução, a pasta `saida/` será criada.
-
-```text
-saida/
-│
-├── Resultado_Inventario.xlsx
-└── Resumo_Filiais.xlsx
-```
-
----
-
-# 📊 Resultado_Inventario.xlsx
-
-Contém o detalhamento dos equipamentos processados.
-
-Principais informações:
-
-```text
-FILIAL
-QR Code
-NR_DISK
-MODELO
-CUSTO
-CODIGO_LEITURA
-NOME
-DATAHORA
-VENCIMENTO
-STATUS
-DIAS_SEM_LEITURA
-HORAS_RESTANTES
-DATA_ANALISE
-```
-
----
-
-# 📈 Resumo_Filiais.xlsx
-
-Contém os indicadores consolidados por filial.
-
-Inclui:
-
-```text
-TOTAL
-LIDOS
-PENDENTES
-NUNCA_LIDOS
-VALOR_PENDENTE
-NAO_LIDOS
-PERCENTUAL_LIDOS
-PERCENTUAL_NAO_LIDOS
-```
-
----
-
-# 🧪 Testando a aplicação
-
-Antes de automatizar a execução diária, execute manualmente:
-
-```bash
-python main.py
-```
-
-O terminal deverá apresentar algo semelhante a:
-
-```text
-============================================================
-AUTOMAÇÃO DE INVENTÁRIO DE PALETEIRAS
-============================================================
-
-Validando bases...
-Base 1: 19/08/2026 08:30:00
-Base 2: 19/08/2026 08:31:00
-
-Processando dados...
-
-Processando e-mail da filial CON...
-E-mail enviado para: usuario1@patrus.com.br, usuario2@patrus.com.br
-ID da mensagem: xxxxxxxxxxxxxxxxx
-
-Processando e-mail da filial VIX...
-E-mail enviado para: usuario1@patrus.com.br, usuario2@patrus.com.br
-
-Processamento concluído.
-Total: 000
-Lidos: 000
-Pendentes: 000
-Nunca lidos: 000
-```
-
----
-
-# 🔐 Segurança
-
-Nunca envie para o GitHub:
-
-```text
-.env
-credentials.json
-token.json
-```
-
-Também não devem ser enviados:
-
-```text
-saida/
-```
-
-O `.gitignore` deve conter:
-
-```gitignore
-.env
-credentials.json
-token.json
-saida/
-```
-
----
-
-# 📝 .env.example
-
-O projeto deve possuir um arquivo:
-
-```text
-.env.example
-```
-
-Esse arquivo serve apenas como modelo.
-
-Exemplo:
-
-```env
-GMAIL_CREDENTIALS_FILE=credentials.json
-GMAIL_TOKEN_FILE=token.json
-
-SHAREPOINT_DIR=C:\CAMINHO\DO\SHAREPOINT
-
-ARQUIVO_BASE_1=Gestão Manutenção de Frotas - Controle de Paleteiras.xlsx
-ARQUIVO_BASE_2=Planilha de Paleteiras Disktrans.xlsx
-
-ABA_BASE_2=Base
-
-PRAZO_DIAS=7
-
-CON_EMAIL_1=
-CON_EMAIL_2=
-
-VIX_EMAIL_1=
-VIX_EMAIL_2=
-
-SSA_EMAIL_1=
-SSA_EMAIL_2=
-```
-
-O usuário deve copiar:
-
-```bash
-.env.example
-```
-
-para:
-
-```bash
-.env
-```
-
-e preencher os dados reais.
-
----
-
-# 🐙 GitHub
-
-Antes de enviar o projeto:
-
-```bash
-git status
-```
-
-Verifique se estes arquivos **não aparecem para commit**:
-
-```text
-.env
-credentials.json
-token.json
-saida/
-```
-
-Depois:
-
-```bash
-git add .
-```
-
-Confira:
-
-```bash
-git status
-```
-
-Se estiver tudo correto:
-
-```bash
-git commit -m "Estrutura inicial da automação de inventário"
-```
-
-Depois:
-
-```bash
-git push
-```
-
----
-
-# 🔍 Verificação antes do primeiro push
-
-Execute:
-
-```bash
-git status
-```
-
-O repositório deve conter arquivos semelhantes a:
-
-```text
-main.py
-.env.example
-.gitignore
-requirements.txt
-README.md
-```
-
-E não deve conter:
-
-```text
-.env
-credentials.json
-token.json
-saida/
-```
-
----
-
-# 🆘 Problemas comuns
-
-## Python não encontrado
-
-Erro:
-
-```text
-'python' não é reconhecido como um comando
-```
-
-Verifique:
-
-```bash
-python --version
-```
-
-ou:
-
-```bash
-py --version
-```
-
-Se necessário, instale o Python.
-
----
-
-## Biblioteca não encontrada
-
-Exemplo:
-
-```text
-ModuleNotFoundError: No module named 'pandas'
-```
-
-Execute:
-
-```bash
-pip install -r requirements.txt
-```
-
----
-
-## Gmail pede autorização novamente
-
-Verifique se:
-
-```text
-credentials.json
-```
-
-está presente.
-
-Se o token estiver inválido, pode ser necessário excluir:
-
-```text
-token.json
-```
-
-e executar novamente:
-
-```bash
-python main.py
-```
-
-Isso fará o fluxo OAuth novamente.
-
----
-
-## Erro `Invalid To header`
-
-Verifique os e-mails no `.env`.
-
-Exemplo correto:
-
-```env
-CON_EMAIL_1=usuario1@patrus.com.br
-CON_EMAIL_2=usuario2@patrus.com.br
-```
-
-Evite espaços ou caracteres extras.
-
----
-
-## Base não encontrada
-
-Erro:
-
-```text
-Base 1 não encontrado
-```
-
-Verifique:
-
-```env
-SHAREPOINT_DIR=
-```
-
-e confirme se os nomes configurados correspondem exatamente aos arquivos.
-
----
-
-## Coluna não encontrada
-
-Se aparecer:
-
-```text
-Colunas não encontradas na Base 1
-```
-
-ou:
-
-```text
-Colunas não encontradas na Base 2
-```
-
-verifique se os nomes das colunas nas planilhas foram alterados.
-
----
-
-# 🧹 Reset completo da autorização Gmail
-
-Se for necessário refazer completamente a autenticação:
-
-1. Feche a aplicação.
-2. Exclua:
-
-```text
-token.json
-```
-
-3. Execute:
-
-```bash
-python main.py
-```
-
-4. Faça novamente a autorização no Google.
-
-Não é necessário excluir `credentials.json`.
-
----
-
-# 🏗️ Desenvolvimento futuro
-
-A aplicação está estruturada para receber futuras melhorias.
-
-Possíveis evoluções:
-
-- Execução automática diária.
-- Agendamento pelo Windows Task Scheduler.
-- Registro de logs.
-- Controle de histórico dos e-mails enviados.
-- Prevenção de cobranças duplicadas.
-- Inclusão automática de novas filiais.
-- Dashboard de acompanhamento.
-- Monitoramento de falhas.
-- Notificação de erro da automação.
-- Separação das configurações em módulos.
-- Execução em servidor.
-- Integração futura com outras APIs.
-
----
-
-# 🔁 Fluxo completo da solução
-
-```text
-                    SHAREPOINT
-                        │
-                        ▼
-              ┌──────────────────┐
-              │    Base 1 Excel  │
-              │    Leituras      │
-              └────────┬─────────┘
-                       │
-                       │
-              ┌────────▼─────────┐
-              │    Base 2 Excel  │
-              │    Paleteiras    │
-              └────────┬─────────┘
-                       │
-                       ▼
-              ┌──────────────────┐
-              │     Python       │
-              │                  │
-              │ Cruzamento       │
-              │ QR Codes         │
-              │ Status           │
-              │ Prazos           │
-              │ Valores          │
-              └────────┬─────────┘
-                       │
-             ┌─────────┴──────────┐
-             │                    │
-             ▼                    ▼
-      Resultado Excel       Resumo Excel
-             │
-             ▼
-       Pendências por
-           filial
-             │
-             ▼
-       HTML personalizado
-             │
-             ▼
-         Gmail API
-             │
-      ┌──────┴──────┐
-      ▼             ▼
-     CON           VIX
-      │             │
-      ▼             ▼
-  Destinatários  Destinatários
-```
-
----
-
-# 👨‍💻 Autor
-
-Projeto desenvolvido para automação do processo de inventário e acompanhamento de paleteiras.
-
-**Automação - Patrus Transportes**
-
----
-
-# 📄 Licença
-
-Este projeto é de uso interno.
-
-Não distribuir credenciais, tokens, dados das bases ou informações internas da empresa.
+Antes de publicar, confira `git status --short` e o conteúdo das alterações. O `.gitignore` não remove arquivos já presentes em commits antigos.
