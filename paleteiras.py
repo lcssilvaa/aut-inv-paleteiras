@@ -7,8 +7,8 @@ import os
 import pandas as pd
 
 from dotenv import load_dotenv
-
-from email.mime.text import MIMEText
+from automacao.relatorios_pdf import gerar_pdf_paleteiras, salvar_pdf_paleteiras
+from automacao.mensagem_email import criar_mensagem
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -21,7 +21,6 @@ from googleapiclient.discovery import build
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# Carrega as variáveis do arquivo .env
 load_dotenv(BASE_DIR / ".env")
 
 SAIDA_DIR = BASE_DIR / "saida"
@@ -686,7 +685,7 @@ def autenticar():
     return credenciais
 
 
-def enviar_email(destinatarios, assunto, corpo_html):
+def enviar_email(destinatarios, assunto, corpo_html, anexo_pdf=None):
 
     if isinstance(destinatarios, str):
         destinatarios = [destinatarios]
@@ -706,14 +705,7 @@ def enviar_email(destinatarios, assunto, corpo_html):
         credentials=credenciais,
     )
 
-    mensagem = MIMEText(
-        corpo_html,
-        "html",
-        "utf-8",
-    )
-
-    mensagem["to"] = ", ".join(destinatarios)
-    mensagem["subject"] = assunto
+    mensagem = criar_mensagem(destinatarios, assunto, corpo_html, anexo_pdf)
 
     mensagem_codificada = base64.urlsafe_b64encode(mensagem.as_bytes()).decode()
 
@@ -772,6 +764,10 @@ def enviar_emails(resultado):
             destinatarios=destinatarios,
             assunto=assunto,
             corpo_html=corpo_html,
+            anexo_pdf=(
+                f"Resumo_Paleteiras_{filial}.pdf",
+                gerar_pdf_paleteiras(resultado, PRAZO_DIAS, filial=filial),
+            ),
         )
 
 
@@ -855,6 +851,9 @@ def salvar_resultados(resultado, resumo):
         SAIDA_DIR / "Resumo_Filiais.xlsx",
         index=False,
     )
+
+    pdf = salvar_pdf_paleteiras(resultado, SAIDA_DIR, PRAZO_DIAS)
+    print(f"Resumo visual em PDF: {pdf}")
 
 
 # ============================================================

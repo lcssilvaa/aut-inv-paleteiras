@@ -87,7 +87,7 @@ class EquipamentosAtivosTest(unittest.TestCase):
         linhas[1][-1] = "Sim"
         reativados = self.carregar(linhas).set_index("PLACA_NORMALIZADA")
         self.assertEqual(len(reativados), 2)
-        self.assertEqual(len(reativados.loc["MANUTENCAO", "TIPOS_ACEITOS"]), 3)
+        self.assertEqual(reativados.loc["MANUTENCAO", "TIPOS_ACEITOS"], ["Bateria"])
 
     def test_desabilitados_nao_entram_em_relatorios_resumo_ou_email(self):
         equipamentos = self.carregar(

@@ -8,8 +8,8 @@ import unicodedata
 
 import pandas as pd
 from dotenv import load_dotenv
-
-from email.mime.text import MIMEText
+from automacao.relatorios_pdf import gerar_pdf_checklist, salvar_pdf_checklist
+from automacao.mensagem_email import criar_mensagem
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -82,12 +82,14 @@ def carregar_destinatarios():
         "CEDOC",
         "CON",
         "CPQ",
+        "CSU",
         "CTN",
         "CWB",
         "DIQ",
         "ESTOQUE",
         "FEC",
         "FLN",
+        "FROTAS",
         "FOR",
         "GVR",
         "IPN",
@@ -96,7 +98,8 @@ def carregar_destinatarios():
         "JMV",
         "JOI",
         "LDB",
-        "MHA",
+        "MAH",
+        "MANUTENCAO",
         "MOC",
         "NSE",
         "PNZ",
@@ -113,7 +116,7 @@ def carregar_destinatarios():
         "RIO",
         "SAJ",
         "SALVADOS",
-        "SÃO",
+        "SAO",
         "SEI",
         "SJK",
         "SJP",
@@ -147,6 +150,13 @@ def carregar_destinatarios():
 
 
 DESTINATARIOS = carregar_destinatarios()
+
+FILIAIS_OPERACIONAIS = {
+    "BACKUP": ("2", "CON"),
+    "FROTAS": ("2", "CON"),
+}
+
+GRUPOS_COBRANCA = set(FILIAIS_OPERACIONAIS) | {"MANUTENCAO"}
 
 
 def limpar_texto(valor):
@@ -228,12 +238,12 @@ def obter_siglas_filiais(equipamentos):
     for codigo, filial in zip(
         equipamentos["CODIGO_FILIAL_NORMALIZADO"], equipamentos["FILIAL"]
     ):
-        if codigo and filial and filial != "BACKUP":
+        if codigo and filial and filial not in GRUPOS_COBRANCA:
             siglas.setdefault(codigo, set()).add(filial)
 
     mapa = {codigo: " / ".join(sorted(nomes)) for codigo, nomes in siglas.items()}
-    # BACKUP usa a filial operacional BHZ, mas mantém seu grupo de envio.
-    mapa["1"] = "BHZ"
+    # Os grupos especiais mantêm seus próprios destinatários.
+    mapa.update(FILIAIS_OPERACIONAIS.values())
     return mapa
 
 
@@ -358,6 +368,15 @@ def carregar_equipamentos():
             for valor in grupo["Tipo de Equipamento"]
             if normalizar_tipo(valor)
         )
+
+        # Trocas não substituem o checklist obrigatório da bateria.
+        if tipos_normalizados & {
+            "BATERIA",
+            "TROCA INICIAL - BATERIA",
+            "TROCA FINAL - BATERIA",
+        }:
+            tipos_normalizados = {"BATERIA"}
+            tipos_exibicao = ["Bateria"]
 
         codigos_unicos = list(dict.fromkeys(codigos))
 
@@ -603,11 +622,12 @@ def processar(
     if siglas_filiais is None:
         siglas_filiais = obter_siglas_filiais(equipamentos)
 
-    resultado["FILIAL_ESPERADA"] = resultado["FILIAL"].mask(
-        resultado["FILIAL"].eq("BACKUP")
-        & resultado["CODIGO_FILIAL_NORMALIZADO"].eq("1"),
-        "BHZ",
-    )
+    resultado["FILIAL_ESPERADA"] = resultado["FILIAL"]
+    for grupo, (codigo, sigla) in FILIAIS_OPERACIONAIS.items():
+        mascara = resultado["FILIAL"].eq(grupo) & resultado[
+            "CODIGO_FILIAL_NORMALIZADO"
+        ].eq(codigo)
+        resultado.loc[mascara, "FILIAL_ESPERADA"] = sigla
     resultado["FILIAL_RESPOSTA"] = (
         resultado["CODIGO_FILIAL_RESPOSTA_NORMALIZADO"]
         .map(siglas_filiais)
@@ -680,6 +700,18 @@ def processar(
         dtype=bool,
     )
 
+    resultado["PENDENCIA_BATERIA"] = (
+        resultado["TIPOS_ACEITOS_NORMALIZADOS"].apply(lambda tipos: "BATERIA" in tipos)
+        & resultado["ULTIMA_RESPOSTA"].notna()
+        & resultado["INCONSISTENCIA_TIPO"]
+    )
+    resultado["STATUS_CHECKLIST"] = resultado["STATUS_PRAZO"]
+    resultado.loc[resultado["PENDENCIA_BATERIA"], "STATUS_CHECKLIST"] = "PENDENTE"
+    motivo_bateria = "Checklist Bateria obrigatório; o último registro é de outro tipo"
+    resultado.loc[resultado["PENDENCIA_BATERIA"], "MOTIVO_PENDENCIA"] = resultado.loc[
+        resultado["PENDENCIA_BATERIA"], "MOTIVO_PENDENCIA"
+    ].apply(lambda motivo: f"{motivo}; {motivo_bateria}" if motivo else motivo_bateria)
+
     resultado["INCONSISTENCIA_FILIAL"] = False
 
     possui_resposta = resultado["ULTIMA_RESPOSTA"].notna()
@@ -732,13 +764,13 @@ def processar(
         resultado["INCONSISTENCIA_TIPO"] | resultado["INCONSISTENCIA_FILIAL"]
     )
 
-    resultado["TEM_PROBLEMA"] = (resultado["STATUS_PRAZO"] == "PENDENTE") | resultado[
-        "TEM_INCONSISTENCIA"
-    ]
+    resultado["TEM_PROBLEMA"] = (
+        resultado["STATUS_CHECKLIST"] == "PENDENTE"
+    ) | resultado["TEM_INCONSISTENCIA"]
 
     print(f"    Equipamentos analisados: " f"{len(resultado)}")
 
-    print("    Pendentes: " f"{(resultado['STATUS_PRAZO'] == 'PENDENTE').sum()}")
+    print("    Pendentes: " f"{(resultado['STATUS_CHECKLIST'] == 'PENDENTE').sum()}")
 
     print("    Inconsistências de tipo: " f"{resultado['INCONSISTENCIA_TIPO'].sum()}")
 
@@ -763,11 +795,11 @@ def gerar_resumo(
                 "count",
             ),
             OK=(
-                "STATUS_PRAZO",
+                "STATUS_CHECKLIST",
                 lambda x: (x == "OK").sum(),
             ),
             PENDENTES=(
-                "STATUS_PRAZO",
+                "STATUS_CHECKLIST",
                 lambda x: (x == "PENDENTE").sum(),
             ),
             INCONSISTENCIAS_TIPO=(
@@ -811,10 +843,12 @@ def salvar_resultados(
         "ULTIMO_RESPONSAVEL",
         "ULTIMA_RESPOSTA",
         "VENCIMENTO",
+        "STATUS_CHECKLIST",
         "STATUS_PRAZO",
         "MOTIVO_PENDENCIA",
         "DIAS_SEM_CHECKLIST",
         "HORAS_RESTANTES",
+        "PENDENCIA_BATERIA",
         "INCONSISTENCIA_TIPO",
         "INCONSISTENCIA_FILIAL",
         "DESCRICAO_INCONSISTENCIA",
@@ -827,7 +861,7 @@ def salvar_resultados(
         .sort_values(
             [
                 "FILIAL",
-                "STATUS_PRAZO",
+                "STATUS_CHECKLIST",
                 "Placa",
             ]
         )
@@ -856,13 +890,16 @@ def salvar_resultados(
         index=False,
     )
 
+    pdf = salvar_pdf_checklist(resultado, SAIDA_DIR, PRAZO_DIAS)
+    print(f"Resumo visual em PDF: {pdf}")
+
 
 def gerar_html_email(
     filial,
     dados,
 ):
 
-    pendencias = dados[dados["STATUS_PRAZO"] == "PENDENTE"].copy()
+    pendencias = dados[dados["STATUS_CHECKLIST"] == "PENDENTE"].copy()
 
     inconsistencias = dados[dados["TEM_INCONSISTENCIA"]].copy()
 
@@ -910,9 +947,8 @@ def gerar_html_email(
             <h3>Checklists pendentes</h3>
 
             <p>
-                Os equipamentos abaixo não possuem
-                checklist realizado dentro do prazo de
-                {PRAZO_DIAS} dias.
+                Os equipamentos abaixo possuem pendência de prazo
+                ({PRAZO_DIAS} dias) ou de checklist obrigatório.
             </p>
 
             <table style="
@@ -929,7 +965,7 @@ def gerar_html_email(
                             Tipos aceitos
                         </th>
                         <th style="border:1px solid #ddd;padding:8px;">
-                            Último checklist
+                            Tipo realizado
                         </th>
                         <th style="border:1px solid #ddd;padding:8px;">
                             Última realização
@@ -1132,6 +1168,7 @@ def enviar_email(
     destinatarios,
     assunto,
     corpo_html,
+    anexo_pdf=None,
 ):
 
     if isinstance(
@@ -1156,15 +1193,7 @@ def enviar_email(
         credentials=credenciais,
     )
 
-    mensagem = MIMEText(
-        corpo_html,
-        "html",
-        "utf-8",
-    )
-
-    mensagem["to"] = ", ".join(destinatarios)
-
-    mensagem["subject"] = assunto
+    mensagem = criar_mensagem(destinatarios, assunto, corpo_html, anexo_pdf)
 
     raw = base64.urlsafe_b64encode(mensagem.as_bytes()).decode()
 
@@ -1210,7 +1239,7 @@ def enviar_emails(
 
             continue
 
-        qtd_pendentes = dados["STATUS_PRAZO"].eq("PENDENTE").sum()
+        qtd_pendentes = dados["STATUS_CHECKLIST"].eq("PENDENTE").sum()
 
         qtd_tipo = dados["INCONSISTENCIA_TIPO"].sum()
 
@@ -1242,6 +1271,10 @@ def enviar_emails(
             destinatarios,
             assunto,
             corpo,
+            anexo_pdf=(
+                f"Resumo_Checklist_{filial}.pdf",
+                gerar_pdf_checklist(resultado, PRAZO_DIAS, filial=filial),
+            ),
         )
 
 
